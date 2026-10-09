@@ -1,0 +1,264 @@
+{
+  "name": "check-the-maps",
+  "displayName": "Check The MAPS",
+  "description": "A fast, low-cost pre-flight check for Copilot prompts. Clear prompts go straight through; vague ones get quick questions and a suggested rewrite, using MAPS (Mission, Ask, Parameters, Shape).",
+  "version": "0.1.0",
+  "publisher": "jacobcromwell",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JacobCromwell/CheckTheMaps.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JacobCromwell/CheckTheMaps/issues"
+  },
+  "homepage": "https://github.com/JacobCromwell/CheckTheMaps#readme",
+  "engines": {
+    "vscode": "^1.103.0"
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "keywords": [
+    "copilot",
+    "prompt",
+    "prompt engineering",
+    "chat",
+    "maps",
+    "ai"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": true
+  },
+  "main": "./out/src/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "check-the-maps.maps",
+        "name": "maps",
+        "fullName": "Check The MAPS",
+        "description": "Your prompt is checked, then sent to Copilot",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "check",
+            "description": "Check a prompt without sending it"
+          },
+          {
+            "name": "send",
+            "description": "Skip the check and send straight to Copilot"
+          },
+          {
+            "name": "explain",
+            "description": "What MAPS means and when each part matters"
+          }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "checkTheMaps.startCheckedPrompt",
+        "title": "Start a Checked Prompt",
+        "category": "Check The MAPS",
+        "icon": "$(map)"
+      },
+      {
+        "command": "checkTheMaps.chooseModel",
+        "title": "Choose Checker Model",
+        "category": "Check The MAPS"
+      },
+      {
+        "command": "checkTheMaps.toggleAutoSend",
+        "title": "Toggle Sending Passing Prompts Automatically",
+        "category": "Check The MAPS"
+      },
+      {
+        "command": "checkTheMaps.setStrictness",
+        "title": "Set Strictness",
+        "category": "Check The MAPS"
+      },
+      {
+        "command": "checkTheMaps.explain",
+        "title": "What Is MAPS?",
+        "category": "Check The MAPS"
+      },
+      {
+        "command": "checkTheMaps.openSettings",
+        "title": "Open Settings",
+        "category": "Check The MAPS"
+      },
+      {
+        "command": "checkTheMaps.showLog",
+        "title": "Show Log",
+        "category": "Check The MAPS"
+      },
+      {
+        "command": "checkTheMaps.showMenu",
+        "title": "Show Menu",
+        "category": "Check The MAPS"
+      },
+      {
+        "command": "checkTheMaps.handOff",
+        "title": "Send Prompt to Copilot",
+        "category": "Check The MAPS"
+      },
+      {
+        "command": "checkTheMaps.resend",
+        "title": "Send Prompt Again",
+        "category": "Check The MAPS"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "checkTheMaps.handOff",
+          "when": "false"
+        },
+        {
+          "command": "checkTheMaps.resend",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Check The MAPS",
+      "properties": {
+        "checkTheMaps.autoSend": {
+          "type": "boolean",
+          "default": true,
+          "order": 0,
+          "markdownDescription": "Send prompts that pass the check to Copilot automatically. When off, a passing prompt shows a **Send to Copilot** button instead."
+        },
+        "checkTheMaps.strictness": {
+          "type": "string",
+          "default": "lenient",
+          "order": 1,
+          "enum": [
+            "lenient",
+            "balanced",
+            "strict"
+          ],
+          "enumDescriptions": [
+            "Only flag prompts that are likely to go wrong. Fewest interruptions.",
+            "Flag prompts that leave out something important for their size.",
+            "Flag any prompt that skips a MAPS element its size needs. Good for learning MAPS."
+          ],
+          "markdownDescription": "How picky the check is. Small, specific requests (like renaming a function) always pass."
+        },
+        "checkTheMaps.model": {
+          "type": "string",
+          "default": "",
+          "order": 2,
+          "markdownDescription": "The id of the model that checks your prompts. Leave empty to use the cheapest model with a known price; a premium model is never picked automatically. [Choose Checker Model](command:checkTheMaps.chooseModel) shows every available model with its cost per check."
+        },
+        "checkTheMaps.keepMapsInChatBox": {
+          "type": "boolean",
+          "default": true,
+          "order": 3,
+          "markdownDescription": "After a prompt is sent to Copilot, put `@maps` back in the Chat view's chat box so your next prompt is checked too. Delete it to send a prompt without a check."
+        },
+        "checkTheMaps.sendInMode": {
+          "type": "string",
+          "default": "",
+          "order": 4,
+          "markdownDescription": "Chat mode to send passing prompts in, such as `agent` or `ask`, or the name of a custom agent. Leave empty to keep whatever mode the chat is in. Note that switching into or out of `edit` mode can start a new chat session."
+        },
+        "checkTheMaps.timeoutSeconds": {
+          "type": "number",
+          "default": 8,
+          "minimum": 2,
+          "maximum": 60,
+          "order": 5,
+          "markdownDescription": "Seconds to wait for the checker before sending the prompt on unchecked. Checks usually take one to two seconds."
+        },
+        "checkTheMaps.dailyCheckLimit": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "order": 6,
+          "markdownDescription": "Most model checks per day. After that, prompts are sent on unchecked. Prompts that pass the local rules don't count. Set to `0` for no limit."
+        },
+        "checkTheMaps.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "order": 7,
+          "markdownDescription": "Show the MAPS item in the status bar, with a green check after a passing prompt."
+        }
+      }
+    },
+    "walkthroughs": [
+      {
+        "id": "checkTheMaps.gettingStarted",
+        "title": "Get Started with Check The MAPS",
+        "description": "Catch vague prompts before they cost you a round of rework.",
+        "steps": [
+          {
+            "id": "tryIt",
+            "title": "Check your first prompt",
+            "description": "Start a chat prompt with @maps. Clear prompts go straight to Copilot with a small ✅. Vague ones get a few quick questions and a suggested rewrite.\n[Start a Checked Prompt](command:checkTheMaps.startCheckedPrompt)",
+            "media": {
+              "markdown": "media/walkthrough/try-it.md"
+            },
+            "completionEvents": [
+              "onCommand:checkTheMaps.startCheckedPrompt"
+            ]
+          },
+          {
+            "id": "chooseModel",
+            "title": "Pick the checker model (optional)",
+            "description": "By default, the cheapest model with a known price checks your prompts, at a tiny fraction of a credit per check. You can choose a different one.\n[Choose Checker Model](command:checkTheMaps.chooseModel)",
+            "media": {
+              "markdown": "media/walkthrough/choose-model.md"
+            },
+            "completionEvents": [
+              "onCommand:checkTheMaps.chooseModel"
+            ]
+          },
+          {
+            "id": "tune",
+            "title": "Tune how strict it is",
+            "description": "Lenient is the default and interrupts least. Strict is good while you're learning MAPS.\n[Set Strictness](command:checkTheMaps.setStrictness)",
+            "media": {
+              "markdown": "media/walkthrough/tune.md"
+            },
+            "completionEvents": [
+              "onCommand:checkTheMaps.setStrictness",
+              "onSettingChanged:checkTheMaps.strictness"
+            ]
+          },
+          {
+            "id": "learn",
+            "title": "Learn MAPS",
+            "description": "Mission, Ask, Parameters, Shape: what each one means and which requests need it.\n[What Is MAPS?](command:checkTheMaps.explain)",
+            "media": {
+              "markdown": "media/walkthrough/learn.md"
+            },
+            "completionEvents": [
+              "onCommand:checkTheMaps.explain"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node --test \"out/test/**/*.test.js\"",
+    "package": "vsce package --skip-license",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "1.103.0",
+    "@vscode/vsce": "^3.2.0",
+    "typescript": "^5.6.0"
+  }
+}
