@@ -1,3 +1,5 @@
+import { posix } from 'node:path';
+
 /**
  * A tiny stand-in for the `vscode` module, covering only what the participant
  * handler uses. Loaded in place of `vscode` by ./stubVscode.ts.
@@ -18,6 +20,9 @@ export class Uri {
 	}
 	static file(path: string): Uri {
 		return new Uri('file', path);
+	}
+	static joinPath(base: Uri, ...parts: string[]): Uri {
+		return new Uri(base.scheme, posix.normalize(posix.join(base.path, ...parts)));
 	}
 	get fsPath(): string {
 		return this.path;
@@ -128,19 +133,39 @@ export interface CommandCall {
 	readonly args: unknown[];
 }
 
+type QuickPickAnswer = (items: readonly { label: string }[]) => { label: string } | undefined;
+
 export const recorder = {
 	calls: [] as CommandCall[],
 	messages: [] as string[],
 	clipboard: '',
 	/** Commands that should throw when executed. */
 	failing: new Set<string>(),
+	/** Answers for showQuickPick, used in order. */
+	quickPicks: [] as QuickPickAnswer[],
+	/** Button answers for show*Message, used in order. */
+	buttons: [] as (string | undefined)[],
+	/** Items offered by each showQuickPick call. */
+	offered: [] as string[][],
 	reset(): void {
 		this.calls = [];
 		this.messages = [];
 		this.clipboard = '';
 		this.failing.clear();
+		this.quickPicks = [];
+		this.buttons = [];
+		this.offered = [];
+		settings.reset();
+		files.clear();
+		workspace.isTrusted = true;
+		workspace.workspaceFolders = undefined;
 	},
 };
+
+/** Picks the first item whose label includes the text. */
+export function pick(text: string): QuickPickAnswer {
+	return items => items.find(item => item.label.includes(text));
+}
 
 export const commands = {
 	async executeCommand(command: string, ...args: unknown[]): Promise<unknown> {
@@ -162,15 +187,107 @@ export class TabInputNotebook {}
 export class TabInputNotebookDiff {}
 export class TabInputTerminal {}
 
+async function showMessage(message: string): Promise<string | undefined> {
+	recorder.messages.push(message);
+	return recorder.buttons.shift();
+}
+
 export const window = {
 	tabGroups: { activeTabGroup: { activeTab: undefined as { input: unknown } | undefined } },
-	async showInformationMessage(message: string): Promise<undefined> {
-		recorder.messages.push(message);
+	showInformationMessage: showMessage,
+	showWarningMessage: showMessage,
+	async showQuickPick<T extends { label: string }>(items: readonly T[] | Promise<readonly T[]>): Promise<T | undefined> {
+		const list = await items;
+		recorder.offered.push(list.map(item => item.label));
+		const answer = recorder.quickPicks.shift();
+		return answer ? (answer(list) as T | undefined) : undefined;
+	},
+	async showWorkspaceFolderPick(): Promise<undefined> {
 		return undefined;
 	},
-	async showWarningMessage(message: string): Promise<undefined> {
-		recorder.messages.push(message);
-		return undefined;
+	async showTextDocument(): Promise<void> {},
+};
+
+export enum QuickPickItemKind {
+	Separator = -1,
+	Default = 0,
+}
+
+export enum ConfigurationTarget {
+	Global = 1,
+	Workspace = 2,
+	WorkspaceFolder = 3,
+}
+
+// ---- Settings: one value per scope, like VS Code (without object merging).
+
+class SettingsStore {
+	global = new Map<string, unknown>();
+	workspace = new Map<string, unknown>();
+	reset(): void {
+		this.global.clear();
+		this.workspace.clear();
+	}
+}
+export const settings = new SettingsStore();
+
+function configuration(section: string) {
+	const full = (key: string) => `${section}.${key}`;
+	return {
+		get<T>(key: string, defaultValue?: T): T | undefined {
+			const k = full(key);
+			if (workspace.isTrusted && settings.workspace.has(k)) {
+				return settings.workspace.get(k) as T;
+			}
+			return settings.global.has(k) ? (settings.global.get(k) as T) : defaultValue;
+		},
+		inspect<T>(key: string) {
+			const k = full(key);
+			return {
+				key: k,
+				defaultValue: undefined as T | undefined,
+				globalValue: settings.global.get(k) as T | undefined,
+				workspaceValue: settings.workspace.get(k) as T | undefined,
+			};
+		},
+		async update(key: string, value: unknown, target: ConfigurationTarget): Promise<void> {
+			const store = target === ConfigurationTarget.Global ? settings.global : settings.workspace;
+			store.set(full(key), value);
+		},
+	};
+}
+
+// ---- An in-memory file system.
+
+export const files = new Map<string, string>();
+
+export class FileType {
+	static readonly File = 1;
+	static readonly Directory = 2;
+}
+
+export const workspace = {
+	isTrusted: true,
+	workspaceFolders: undefined as { uri: Uri; name: string; index: number }[] | undefined,
+	getConfiguration: configuration,
+	asRelativePath(uri: Uri): string {
+		return uri.path.replace(/^\/workspace\//, '');
+	},
+	fs: {
+		async readFile(uri: Uri): Promise<Uint8Array> {
+			const text = files.get(uri.toString());
+			if (text === undefined) {
+				throw new Error(`ENOENT ${uri.toString()}`);
+			}
+			return new TextEncoder().encode(text);
+		},
+		async writeFile(uri: Uri, data: Uint8Array): Promise<void> {
+			files.set(uri.toString(), new TextDecoder().decode(data));
+		},
+		async createDirectory(): Promise<void> {},
+		async delete(uri: Uri): Promise<void> {
+			files.delete(uri.toString());
+		},
 	},
 };
 

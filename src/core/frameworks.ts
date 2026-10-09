@@ -183,7 +183,7 @@ export function resolveElementId(framework: Pick<Framework, 'elements'>, value: 
 }
 
 function normalizeKey(value: string): string {
-	return value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+	return value.normalize('NFC').toLowerCase().replace(/[^\p{L}\p{M}\p{N}]/gu, '');
 }
 
 // ---------------------------------------------------------------- custom frameworks
@@ -207,8 +207,9 @@ const MAX_ELEMENTS = 8;
 
 function slug(label: string): string {
 	return label
+		.normalize('NFC')
 		.toLowerCase()
-		.replace(/[^\p{L}\p{N}]+/gu, '-')
+		.replace(/[^\p{L}\p{M}\p{N}]+/gu, '-')
 		.replace(/^-+|-+$/g, '');
 }
 

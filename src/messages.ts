@@ -29,7 +29,11 @@ const SIZE_ROWS: Record<RequestSize, string> = {
 /** The /explain text for a framework: what each element means and which requests need it. */
 export function explain(framework: Framework): string {
 	const elements = framework.elements
-		.map(e => `- **${e.label}**${e.meaning ? `: ${sentence(e.meaning)}` : ''}${e.example ? ` For example: _${e.example.replace(/[.\s]+$/, '')}_.` : ''}`)
+		.map(e => {
+			const example = e.example ? `For example: _${e.example.replace(/[.\s]+$/, '')}_.` : '';
+			const body = [e.meaning ? sentence(e.meaning) : '', example].filter(Boolean).join(' ');
+			return `- **${e.label}**${body ? `: ${body}` : ''}`;
+		})
 		.join('\n');
 	const rows = SIZES.map(size => `| ${SIZE_ROWS[size]} | ${labelList(framework, framework.requiredBySize[size])} |`).join('\n');
 	const source = framework.source ? ` (${framework.source})` : '';

@@ -128,7 +128,7 @@ A quick local scan suggests this is a "${sizeHint}" request. Use your own judgme
 Rules:
 - Context the agent already has counts toward any element it covers: attached files, selected code, the active file and earlier prompts. Don't ask for facts the agent can see. A short follow-up that builds on an earlier prompt is fine.${optionalLine}
 - ${STRICTNESS_RULES[strictness]}${ctx.isRevision ? '\n- The developer already revised this prompt once after feedback. Pass unless something essential is still missing.' : ''}
-- Never flag spelling, grammar, politeness or length.
+- Never flag spelling, grammar, politeness, the tone of the developer's writing, or the prompt's length.
 - Questions: at most 3. Each must be specific to this prompt, and its answer must change the solution. Do not ask generic questions such as "What is your goal?".
 - Rewrite: keep the developer's words and intent. Add only the missing pieces, using [bracketed placeholders] for facts you don't know. Never invent facts. Keep it under 120 words.
 - Write "why", the questions and the rewrite in the same language as the developer's prompt.

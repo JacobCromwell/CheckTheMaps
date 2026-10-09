@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { CO_STAR, MAPS, RISEN } from '../src/core/frameworks';
+import { CO_STAR, MAPS, RISEN, parseCustomFramework } from '../src/core/frameworks';
 import { checklist, escapeMarkdown, explain, fence, help, joinLabels, sentence } from '../src/messages';
 
 describe('messages', () => {
@@ -44,6 +44,13 @@ describe('messages', () => {
 		assert.match(text, /\| Design, architecture or technology choice \| Context, Objective, Audience, Response \|/);
 		assert.match(text, /Style\*\* and \*\*Tone\*\* are optional/);
 		assert.match(explain(MAPS), /4-part checklist/);
+	});
+
+	it('renders parts with only an example, or nothing at all', () => {
+		const f = parseCustomFramework({ elements: [{ label: 'Goal', example: 'ship it.' }, 'Task'] }).framework!;
+		const text = explain(f);
+		assert.match(text, /- \*\*Goal\*\*: For example: _ship it_\./);
+		assert.match(text, /- \*\*Task\*\*\n/);
 	});
 
 	it('names the framework in the help text', () => {

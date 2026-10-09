@@ -107,14 +107,14 @@ Choosing **Define your own framework…** adds a starter framework to your setti
 ```
 
 - `elements` (required): up to eight parts. Plain strings work too: `["Goal", "Task", "Context"]`.
-- `taskElement`: the part that states the task. Small requests need only this one, and every size needs it. If you leave it out, a part named like "Task", "Ask" or "Objective" is used, or else the first part.
+- `taskElement`: the part that states the task. Small requests need only this one, and every size needs it. If you leave it out, the first entry in `requiredBySize.small` is used, then a part named like "Task", "Ask" or "Objective", then the first part.
 - `requiredBySize`: which parts each size needs (`task`, `large`, `design`). Missing sizes get sensible defaults.
 
 Put both settings in the workspace settings (`.vscode/settings.json`) and commit them, and everyone on the team is checked against the same list. If the custom framework can't be used, you'll see what's wrong, and MAPS is used until it's fixed. In Restricted Mode, workspace settings can't choose the framework (or the checker model), so your user settings apply.
 
 ## Copilot instructions (optional)
 
-Instructions files can't send prompts through `@maps`: by the time Copilot reads them, VS Code has already decided which participant answers. They can still help from the other side. **Check The MAPS: Add Guidance to Copilot Instructions** writes a short, clearly marked section into `.github/copilot-instructions.md` (read on every Copilot request) or `AGENTS.md` (read by other coding agents too). It asks the agent to:
+Instructions files can't send prompts through `@maps`: by the time Copilot reads them, VS Code has already decided which participant answers. They can still help from the other side. **Check The MAPS: Add Guidance to Copilot Instructions** writes a short, clearly marked section into `.github/copilot-instructions.md` (read on every Copilot request) or `AGENTS.md` (read by other coding agents, and by Copilot when `chat.useAgentsMdFile` is on). It asks the agent to:
 
 - check bigger requests against your framework before starting
 - ask one or two specific questions when something essential is missing, instead of guessing

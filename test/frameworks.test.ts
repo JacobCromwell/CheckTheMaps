@@ -136,8 +136,10 @@ describe('custom frameworks', () => {
 	});
 
 	it('supports labels in any language', () => {
-		const f = parseCustomFramework({ elements: ['目标', 'Überblick', 'Tâche'] }).framework!;
-		assert.deepEqual(f.elements.map(e => e.id), ['目标', 'überblick', 'tâche']);
+		const f = parseCustomFramework({ elements: ['目标', 'Überblick', 'Tâche', 'कार्य'] }).framework!;
+		assert.deepEqual(f.elements.map(e => e.id), ['目标', 'überblick', 'tâche', 'कार्य']);
+		// The same label typed with combining characters matches.
+		assert.equal(resolveElementId(f, 'U\u0308berblick'), 'überblick');
 	});
 
 	it('rejects settings that cannot work', () => {

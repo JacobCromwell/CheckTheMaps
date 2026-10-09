@@ -37,9 +37,14 @@ function customSettingValue(): unknown {
 	return effectiveSettingValue(config().inspect<unknown>(CUSTOM_KEY), vscode.workspace.isTrusted);
 }
 
+/** The framework id as configured, even when it can't be used (a broken custom framework). */
+function configuredFrameworkId(): string {
+	return config().get<string>(FRAMEWORK_KEY, DEFAULT_FRAMEWORK.id);
+}
+
 /** The framework from settings, falling back to MAPS when the setting can't be used. */
 export function currentFramework(): FrameworkChoice {
-	return resolveFramework(config().get<string>(FRAMEWORK_KEY, DEFAULT_FRAMEWORK.id), customSettingValue());
+	return resolveFramework(configuredFrameworkId(), customSettingValue());
 }
 
 /** True when the workspace (not just the user) sets this key, and the workspace is trusted. */
@@ -84,17 +89,18 @@ export function reportFrameworkProblems(problems: readonly string[], log: (messa
 	fresh.forEach(p => shownProblems.add(p));
 	void vscode.window.showWarningMessage(`Check The MAPS: ${fresh.join(' ')}`, 'Fix It').then(choice => {
 		if (choice) {
-			void revealSettingJson(currentFramework().framework.id === CUSTOM_FRAMEWORK_ID ? CUSTOM_KEY : FRAMEWORK_KEY);
+			void revealSettingJson(configuredFrameworkId() === CUSTOM_FRAMEWORK_ID ? CUSTOM_KEY : FRAMEWORK_KEY);
 		}
 	});
 }
 
 export async function chooseFramework(explainCommand: string): Promise<void> {
-	const current = currentFramework().framework;
+	// Compare against the setting, not the fallback: a broken custom framework falls back to MAPS.
+	const configured = configuredFrameworkId();
 	const customValue = customSettingValue();
 	const custom = parseCustomFramework(customValue).framework;
 	const customIsSet = customValue !== undefined && !(typeof customValue === 'object' && customValue && Object.keys(customValue).length === 0);
-	const mark = (id: string) => (id === current.id ? ' $(check)' : '');
+	const mark = (id: string) => (id === configured ? ' $(check)' : '');
 
 	type Item = vscode.QuickPickItem & { id?: string; editCustom?: boolean };
 	const describe = (f: Framework) => f.elements.map(e => e.label).join(' · ');
@@ -144,7 +150,7 @@ export async function chooseFramework(explainCommand: string): Promise<void> {
 		}
 		return;
 	}
-	if (!choice.id || choice.id === current.id) {
+	if (!choice.id || choice.id === configured) {
 		return;
 	}
 
