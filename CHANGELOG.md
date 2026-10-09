@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Choose the prompt framework: MAPS (Dan Martell, the default), CO-STAR, RISEN, RTF, or your own checklist defined in settings and shareable through the workspace.
+- `/explain`, the checklist line, messages and the checker's questions follow the chosen framework.
+- New command: **Add Guidance to Copilot Instructions** writes a marked, framework-aware section into `.github/copilot-instructions.md` or `AGENTS.md`, and can update or remove it later.
 - Hand-offs now send to the chat you're typing in (Chat view, editor tab or Quick Chat) and wait for VS Code to mark the `@maps` reply complete, instead of a fixed delay.
 - `@maps` is put back in the chat box after a prompt is sent (`checkTheMaps.keepMapsInChatBox`), unless you've moved on to an editor.
 - Files referenced inline (`#file:…`) and attached folders are carried over to Copilot.

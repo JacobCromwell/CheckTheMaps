@@ -1,4 +1,6 @@
-# Learn MAPS
+# Learn your framework
+
+This page describes MAPS, the default. If you've chosen another framework, **Explain the Prompt Framework** (or `@maps /explain`) describes that one instead.
 
 **MAPS** is a four-part checklist for prompts:
 

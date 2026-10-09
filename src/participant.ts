@@ -13,6 +13,7 @@
  */
 
 import * as vscode from 'vscode';
+import type { Framework } from './core/frameworks';
 import type { PriceEntry } from './core/models';
 import {
 	buildCheckPrompt,
@@ -22,11 +23,10 @@ import {
 	unfilledPlaceholders,
 	type CheckContext,
 	type CheckVerdict,
-	type MapsElement,
 } from './core/rubric';
 import { estimateTokens, type StatsEvent } from './core/stats';
 import { triage, type RequestSize, type Strictness } from './core/triage';
-import { EXPLAIN, HELP, JUSTIFICATION, escapeMarkdown, fence, joinLabels, mapsChecklist } from './messages';
+import { JUSTIFICATION, checklist, escapeMarkdown, explain, fence, help, joinLabels } from './messages';
 
 export const PARTICIPANT_ID = 'check-the-maps.maps';
 /** The name developers type after `@`. Must match package.json. */
@@ -36,6 +36,8 @@ export const RESEND_COMMAND = 'checkTheMaps.resend';
 export const CHOOSE_MODEL_COMMAND = 'checkTheMaps.chooseModel';
 
 export interface Settings {
+	/** The checklist prompts are checked against. */
+	readonly framework: Framework;
 	readonly strictness: Strictness;
 	/** Hand passing prompts to Copilot automatically. */
 	readonly autoSend: boolean;
@@ -113,7 +115,9 @@ export interface ResultMetadata {
 	readonly outcome: Outcome;
 	readonly size?: RequestSize;
 	readonly source?: 'local' | 'model';
-	readonly missing?: readonly MapsElement[];
+	readonly missing?: readonly string[];
+	/** Name of the framework the prompt was checked against, such as `MAPS`. */
+	readonly framework?: string;
 	readonly placeholders?: readonly string[];
 	/** Set when a hand-off is waiting for this response to finish. */
 	readonly handOffId?: string;
@@ -297,20 +301,23 @@ export function createHandler(deps: HandlerDeps): vscode.ChatRequestHandler {
 	const modelsUsed = new Set<string>();
 
 	return async (request, context, stream, token): Promise<vscode.ChatResult> => {
-		const meta = (metadata: ResultMetadata): vscode.ChatResult => ({ metadata });
+		const settings = deps.settings();
+		const framework = settings.framework;
+		const meta = (metadata: ResultMetadata): vscode.ChatResult => ({
+			metadata: { framework: framework.name, ...metadata },
+		});
 
 		if (request.command === 'explain') {
-			stream.markdown(EXPLAIN);
+			stream.markdown(explain(framework));
 			return meta({ outcome: 'explain' });
 		}
 
 		const prompt = request.prompt.trim();
 		if (!prompt) {
-			stream.markdown(HELP);
+			stream.markdown(help(framework));
 			return meta({ outcome: 'help' });
 		}
 
-		const settings = deps.settings();
 		const mode = settings.sendInMode.trim() || undefined;
 		const attachments = await collectAttachments(request, deps);
 		if (token.isCancellationRequested) {
@@ -384,7 +391,7 @@ export function createHandler(deps: HandlerDeps): vscode.ChatRequestHandler {
 			deps.setStatus('passed', `Passed: ${reason}`);
 			deps.log(`passed (${source}, ${size}): ${reason}`);
 			if (checkOnly) {
-				stream.markdown(`✅ **Passes MAPS.** ${mapsChecklist(size, [])}`);
+				stream.markdown(`✅ **Passes ${framework.name}.** ${checklist(framework, size, [])}`);
 				sendButton('Send to Copilot', 'passed');
 				return meta({ outcome: 'passed', size, source });
 			}
@@ -482,7 +489,7 @@ export function createHandler(deps: HandlerDeps): vscode.ChatRequestHandler {
 			earlierPrompts: history.earlierPrompts,
 			isRevision,
 		};
-		const checkPrompt = buildCheckPrompt(prompt, local.size, checkContext, settings.strictness);
+		const checkPrompt = buildCheckPrompt(prompt, local.size, checkContext, settings.strictness, framework);
 
 		const timeoutMs = firstUse ? 120_000 : Math.max(2, settings.timeoutSeconds) * 1000;
 		deps.record('modelChecks');
@@ -507,7 +514,7 @@ export function createHandler(deps: HandlerDeps): vscode.ChatRequestHandler {
 		}
 		deps.log(`checker answered in ${Date.now() - started} ms`);
 
-		const verdict = parseVerdict(raw);
+		const verdict = parseVerdict(raw, framework);
 		if (!verdict) {
 			// Log only the size: the answer can quote the developer's prompt.
 			deps.log(`unreadable checker answer (${raw.length} characters)`);
@@ -522,13 +529,13 @@ export function createHandler(deps: HandlerDeps): vscode.ChatRequestHandler {
 
 		function flagged(v: CheckVerdict): vscode.ChatResult {
 			deps.record('flagged');
-			const headline = v.missing.length ? `Missing ${joinLabels(v.missing)}` : 'A few details would help';
+			const headline = v.missing.length ? `Missing ${joinLabels(framework, v.missing)}` : 'A few details would help';
 			deps.setStatus('flagged', headline);
 			deps.log(`flagged (${v.size}): ${v.missing.join(', ') || 'questions only'}`);
 
 			const parts: string[] = [];
 			parts.push(`⚠️ **${headline}.**${v.why ? ` ${escapeMarkdown(v.why)}` : ''}`);
-			parts.push(`_${mapsChecklist(v.size, v.missing)}_`);
+			parts.push(`_${checklist(framework, v.size, v.missing)}_`);
 			if (v.questions.length) {
 				parts.push(
 					`**Worth answering first:**\n${v.questions.map((q, i) => `${i + 1}. ${escapeMarkdown(q)}`).join('\n')}`,
@@ -563,7 +570,7 @@ export function createHandler(deps: HandlerDeps): vscode.ChatRequestHandler {
 /**
  * Followups double as our "response finished" signal: VS Code asks for them in
  * the same step that marks the response complete, so a waiting hand-off can go
- * right away. After a flagged prompt, we also offer "What is MAPS?".
+ * right away. After a flagged prompt, we also offer "What is MAPS?" (or the active framework's name).
  */
 export function createFollowupProvider(releaseHandOff: (id: string) => void): vscode.ChatFollowupProvider {
 	return {
@@ -573,7 +580,8 @@ export function createFollowupProvider(releaseHandOff: (id: string) => void): vs
 				releaseHandOff(metadata.handOffId);
 			}
 			if (metadata?.outcome === 'flagged') {
-				return [{ prompt: 'What is MAPS?', label: 'What is MAPS?', command: 'explain' }];
+				const question = `What is ${metadata.framework ?? 'MAPS'}?`;
+				return [{ prompt: question, label: question, command: 'explain' }];
 			}
 			return [];
 		},

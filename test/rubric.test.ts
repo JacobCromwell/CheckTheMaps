@@ -10,6 +10,7 @@ import {
 	unfilledPlaceholders,
 	type CheckContext,
 } from '../src/core/rubric';
+import { CO_STAR, RISEN, RTF } from '../src/core/frameworks';
 
 const ctx: CheckContext = {
 	attachments: ['src/api.ts'],
@@ -164,3 +165,35 @@ describe('placeholders', () => {
 		assert.deepEqual(unfilledPlaceholders('Design for 10k users on AWS', ['[expected load]']), []);
 	});
 });
+
+describe('frameworks in the rubric', () => {
+	const ctx2: CheckContext = { attachments: [], hasSelection: false, earlierPrompts: [], isRevision: false, activeFileErrors: 0 };
+
+	it('builds the checklist from the framework', () => {
+		const text = buildCheckPrompt('x', 'task', ctx2, 'lenient', RISEN);
+		assert.match(text, /Use the RISEN checklist\./);
+		assert.match(text, /- End goal \("end-goal"\): what success looks like\./);
+		assert.match(text, /- task: a bug fix or a feature inside existing code \(.*\)\. Needs: Instructions and Narrowing\./);
+		assert.match(text, /using these ids: "role", "instructions", "steps", "end-goal", "narrowing"/);
+		assert.match(text, /Role and Steps are optional: never flag them as missing/);
+		assert.match(text, /"you" means the developer/);
+	});
+
+	it('maps labels in the answer to the framework ids', () => {
+		const v = parseVerdict('{"size":"large","verdict":"improve","missing":["Format","Role","Shape"],"why":"","questions":[],"rewrite":""}', RTF);
+		// Role isn't needed for a large change, and Shape isn't an RTF element.
+		assert.deepEqual(v?.missing, ['format']);
+	});
+
+	it('passes when everything reported was optional, even with questions', () => {
+		const v = { verdict: 'improve' as const, size: 'design' as const, why: '', questions: ['Which tone?'], rewrite: '', missing: ['tone', 'style'] };
+		assert.equal(applyPolicy(v, CO_STAR).verdict, 'pass');
+	});
+
+	it('passes small requests unless the framework\'s task element is missing', () => {
+		const base = { verdict: 'improve' as const, size: 'small' as const, why: '', questions: [] as string[], rewrite: '' };
+		assert.equal(applyPolicy({ ...base, missing: ['context'] }, CO_STAR).verdict, 'pass');
+		assert.equal(applyPolicy({ ...base, missing: ['objective'] }, CO_STAR).verdict, 'improve');
+	});
+});
+
