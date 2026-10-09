@@ -475,7 +475,13 @@ describe('participant: failing open', () => {
 		const meta = await run(handler, record, 'add caching to the user lookup', { cancelled: true });
 		assert.equal(meta.outcome, 'unchecked');
 		assert.equal(record.handOffs.length, 0);
-		assert.deepEqual(record.statuses, ['checking', 'idle']);
+		assert.equal(record.modelPrompts.length, 0);
+		assert.deepEqual(record.markdown, []);
+
+		// Even a prompt that would pass locally isn't sent after Stop.
+		const local = await run(handler, record, 'rename helloWorld to helloDolly', { cancelled: true });
+		assert.equal(local.outcome, 'unchecked');
+		assert.equal(record.handOffs.length, 0);
 	});
 
 	it('/check never sends, even when unchecked', async () => {

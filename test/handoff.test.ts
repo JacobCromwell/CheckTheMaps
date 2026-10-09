@@ -2,7 +2,7 @@ import './support/stubVscode';
 
 import { strict as assert } from 'node:assert';
 import { beforeEach, describe, it, mock } from 'node:test';
-import { FALLBACK_DELAY_MS, HandOffService, chatIsProbablyInView } from '../src/handoff';
+import { FALLBACK_DELAY_MS, HandOffService, REFILL_DELAY_MS, chatIsProbablyInView } from '../src/handoff';
 import type { HandOffRequest } from '../src/participant';
 import * as stub from './support/vscode';
 
@@ -10,12 +10,16 @@ const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 
 function service(refill = false) {
 	const sent: HandOffRequest[] = [];
+	const refillChecks: number[] = [];
 	const svc = new HandOffService('maps', {
 		onSent: request => sent.push(request),
-		shouldRefill: () => refill,
+		shouldRefill: sentAt => {
+			refillChecks.push(sentAt);
+			return refill;
+		},
 		log: () => undefined,
 	});
-	return { svc, sent };
+	return { svc, sent, refillChecks };
 }
 
 const request = (overrides: Partial<HandOffRequest> = {}): HandOffRequest => ({
@@ -64,25 +68,34 @@ describe('HandOffService', () => {
 		}
 	});
 
-	it('attaches files and folders and switches built-in modes before submitting', async () => {
+	it('switches to Ask mode first, then attaches files and folders, then submits', async () => {
 		const { svc } = service();
 		await svc.send(
 			request({
-				mode: 'agent',
+				mode: 'ask',
 				files: ['file:///workspace/a.ts', 'file:///workspace/b.ts'],
 				folders: ['file:///workspace/src'],
 			}),
 		);
 		assert.deepEqual(names(), [
+			'workbench.action.chat.toggleAgentMode',
 			'workbench.action.chat.attachFile',
 			'workbench.action.chat.attachFolder',
-			'workbench.action.chat.toggleAgentMode',
 			'workbench.action.chat.submit',
 		]);
-		const [first, all] = stub.recorder.calls[0].args as [stub.Uri, stub.Uri[]];
+		assert.deepEqual(stub.recorder.calls[0].args, [{ modeId: 'ask' }]);
+		const [first, all] = stub.recorder.calls[1].args as [stub.Uri, stub.Uri[]];
 		assert.equal(first.toString(), 'file:///workspace/a.ts');
 		assert.equal(all.length, 2);
-		assert.deepEqual(stub.recorder.calls[2].args, [{ modeId: 'agent' }]);
+	});
+
+	it('uses the Chat view for Agent mode, so a missing mode is ignored rather than cycled', async () => {
+		const { svc } = service();
+		await svc.send(request({ mode: 'agent', files: ['file:///workspace/a.ts'] }));
+		assert.deepEqual(names(), ['workbench.action.chat.open']);
+		const options = stub.recorder.calls[0].args[0] as { mode: string; attachFiles: stub.Uri[] };
+		assert.equal(options.mode, 'agent');
+		assert.equal(options.attachFiles.length, 1);
 	});
 
 	it('uses the Chat view for custom agents, which are selected by name', async () => {
@@ -131,10 +144,14 @@ describe('HandOffService', () => {
 	it('puts @maps back in the chat box after sending, when asked to', async () => {
 		mock.timers.enable({ apis: ['setTimeout'] });
 		try {
-			const { svc } = service(true);
+			const { svc, refillChecks } = service(true);
 			await svc.send(request());
-			mock.timers.tick(1000);
+			mock.timers.tick(REFILL_DELAY_MS - 1);
 			await flush();
+			assert.equal(refillChecks.length, 0);
+			mock.timers.tick(1);
+			await flush();
+			assert.equal(refillChecks.length, 1);
 			assert.deepEqual(stub.recorder.calls.at(-1), {
 				command: 'workbench.action.chat.open',
 				args: [{ query: '@maps ', isPartialQuery: true }],
@@ -150,7 +167,7 @@ describe('HandOffService', () => {
 		try {
 			const { svc } = service(false);
 			await svc.send(request());
-			mock.timers.tick(1000);
+			mock.timers.tick(REFILL_DELAY_MS + 1);
 			await flush();
 			assert.deepEqual(names(), ['workbench.action.chat.submit']);
 		} finally {

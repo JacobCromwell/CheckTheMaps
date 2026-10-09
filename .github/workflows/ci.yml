@@ -23,7 +23,22 @@ jobs:
         run: npm test
 
       - name: Package the extension
-        run: npx vsce package --skip-license --out check-the-maps.vsix
+        run: |
+          set -o pipefail
+          npx vsce package --skip-license --out check-the-maps.vsix 2>&1 | tee vsce.log
+          # Surface packaging warnings on the run page.
+          grep -i 'warning' vsce.log | while read -r line; do echo "::warning title=vsce::$line"; done || true
+
+      - name: Summarize the package
+        run: |
+          {
+            echo '### check-the-maps.vsix'
+            echo
+            echo '```'
+            unzip -l check-the-maps.vsix
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Packaged files::$(unzip -Z1 check-the-maps.vsix | tr '\n' ' ')"
 
       - name: Upload the .vsix
         uses: actions/upload-artifact@v4

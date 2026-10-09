@@ -118,13 +118,33 @@ export function activate(context: vscode.ExtensionContext): void {
 	const models = new ModelResolver(() => config().get<string>('model', ''));
 	context.subscriptions.push(models);
 
+	// When the developer last clicked or typed in an editor or switched files. Putting
+	// @maps back in the chat box focuses the chat, so we skip it once they've moved on.
+	let lastEditorActivity = 0;
+	const noteEditorActivity = () => {
+		lastEditorActivity = Date.now();
+	};
+	context.subscriptions.push(
+		vscode.window.onDidChangeTextEditorSelection(e => {
+			if (
+				e.kind === vscode.TextEditorSelectionChangeKind.Keyboard ||
+				e.kind === vscode.TextEditorSelectionChangeKind.Mouse
+			) {
+				noteEditorActivity();
+			}
+		}),
+		vscode.window.onDidChangeActiveTextEditor(noteEditorActivity),
+		vscode.window.onDidChangeActiveTerminal(noteEditorActivity),
+	);
+
 	const handOffs = new HandOffService(PARTICIPANT_NAME, {
 		onSent: (request: HandOffRequest) => {
 			if (request.reason === 'sendAnyway') {
 				stats.update(recordEvent(stats.get(), 'sentAnyway', todayKey()));
 			}
 		},
-		shouldRefill: () => config().get<boolean>('keepMapsInChatBox', true) && chatIsProbablyInView(),
+		shouldRefill: sentAt =>
+			config().get<boolean>('keepMapsInChatBox', true) && lastEditorActivity < sentAt && chatIsProbablyInView(),
 		log: message => log.info(message),
 	});
 	context.subscriptions.push(handOffs);

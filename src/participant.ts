@@ -313,6 +313,9 @@ export function createHandler(deps: HandlerDeps): vscode.ChatRequestHandler {
 		const settings = deps.settings();
 		const mode = settings.sendInMode.trim() || undefined;
 		const attachments = await collectAttachments(request, deps);
+		if (token.isCancellationRequested) {
+			return meta({ outcome: 'unchecked' });
+		}
 		const history = readHistory(context);
 		const checkOnly = request.command === 'check';
 		const autoSend = settings.autoSend && !checkOnly;
@@ -440,6 +443,9 @@ export function createHandler(deps: HandlerDeps): vscode.ChatRequestHandler {
 			deps.log(`model lookup failed: ${String(error)}`);
 			return unchecked("The list of language models couldn't be read.");
 		}
+		if (token.isCancellationRequested) {
+			return meta({ outcome: 'unchecked' });
+		}
 		if (!choice.model) {
 			return unchecked(choice.note, chooseModelButton);
 		}
@@ -463,8 +469,9 @@ export function createHandler(deps: HandlerDeps): vscode.ChatRequestHandler {
 		);
 		deps.setStatus('checking', `Checking with ${choice.label}`);
 
+		const lastOutcome = history.lastMetadata?.outcome;
 		const isRevision =
-			history.lastMetadata?.outcome === 'flagged' &&
+			(lastOutcome === 'flagged' || lastOutcome === 'placeholders') &&
 			history.lastPrompt !== undefined &&
 			isLikelyRevision(history.lastPrompt, prompt);
 		const checkContext: CheckContext = {

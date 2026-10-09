@@ -38,6 +38,8 @@ describe('triage: passes small, specific prompts instantly', () => {
 		['document the public functions in utils.py'],
 		['translate this python to go', { hasSelection: true }],
 		['use async/await instead', { hasEarlierTurns: true }],
+		['use async/await in fetchOrders'],
+		['enable strict mode in tsconfig.json'],
 		['add GitHub login to AuthController'],
 	];
 	for (const [prompt, overrides] of passes) {
@@ -68,6 +70,12 @@ describe('triage: sends open-ended prompts to the checker', () => {
 		['add iOS support', 'task'],
 		['update to TypeScript', 'task'],
 		['add PostgreSQL', 'task'],
+		['add TanStack Query', 'task'],
+		['add NextAuth', 'task'],
+		['add SendGrid emails', 'task'],
+		['add PagerDuty alerts', 'task'],
+		['set up KeyCloak', 'task'],
+		['add AlpineJS', 'task'],
 		['refactor parseConfig in config.ts to be easier to test', 'task'],
 		['refactor the auth module', 'large'],
 		['rewrite the billing service', 'large'],
