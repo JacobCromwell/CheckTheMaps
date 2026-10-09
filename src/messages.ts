@@ -2,10 +2,11 @@
  * Developer-facing text, kept in one place so the tone stays consistent.
  */
 
+import { SIZES, elementLabel, orderElements, type Framework } from './core/frameworks';
 import type { RequestSize } from './core/triage';
-import { MAPS_LABELS, MAPS_ORDER, REQUIRED_BY_SIZE, type MapsElement } from './core/rubric';
 
-export const HELP = `**Check The MAPS** checks your prompt, then hands it to Copilot.
+export function help(framework: Framework): string {
+	return `**Check The MAPS** checks your prompt against ${framework.name}, then hands it to Copilot.
 
 Type your request after \`@maps\`, for example:
 
@@ -15,25 +16,44 @@ Clear prompts go straight through. If something important is missing, you'll get
 
 - \`@maps /check …\` checks a prompt without sending it
 - \`@maps /send …\` skips the check
-- \`@maps /explain\` explains MAPS`;
+- \`@maps /explain\` explains ${framework.name}`;
+}
 
-export const EXPLAIN = `**MAPS** is a four-part checklist for prompts:
+const SIZE_ROWS: Record<RequestSize, string> = {
+	small: 'Small edit or question ("rename helloWorld to helloDolly")',
+	task: 'Bug fix or feature in existing code',
+	large: 'Multi-file refactor or migration',
+	design: 'Design, architecture or technology choice',
+};
 
-- **Mission**: why you want this, the outcome that matters.
-- **Ask**: the specific task or deliverable.
-- **Parameters**: facts the AI can't guess, such as your stack, constraints, the files involved, scale, what must not change, or the exact error.
-- **Shape**: what the answer should look like, such as a plan, a diff, a short answer, or options with trade-offs.
+/** The /explain text for a framework: what each element means and which requests need it. */
+export function explain(framework: Framework): string {
+	const elements = framework.elements
+		.map(e => `- **${e.label}**${e.meaning ? `: ${sentence(e.meaning)}` : ''}${e.example ? ` For example: _${e.example.replace(/[.\s]+$/, '')}_.` : ''}`)
+		.join('\n');
+	const rows = SIZES.map(size => `| ${SIZE_ROWS[size]} | ${labelList(framework, framework.requiredBySize[size])} |`).join('\n');
+	const source = framework.source ? ` (${framework.source})` : '';
+	const parts = [
+		`**${framework.name}**${source} is a ${framework.elements.length}-part checklist for prompts:`,
+		elements,
+		'Not every prompt needs every part:',
+		`| Request | Needs |\n|---|---|\n${rows}`,
+	];
+	if (framework.note) {
+		parts.push(framework.note);
+	}
+	parts.push('_Change the framework with **Check The MAPS: Choose Prompt Framework**._');
+	return parts.join('\n\n');
+}
 
-Not every prompt needs all four:
+/** Ends text with exactly one period. */
+export function sentence(text: string): string {
+	return `${text.trim().replace(/[.\s]+$/, '')}.`;
+}
 
-| Request | Needs |
-|---|---|
-| Small edit or question ("rename helloWorld to helloDolly") | Ask |
-| Bug fix or feature in existing code | Ask, Parameters |
-| Multi-file refactor or migration | Ask, Parameters, Shape |
-| Design, architecture or technology choice | Mission, Ask, Parameters, Shape |
-
-Missing **Parameters** is the usual cause of confident answers built on wrong guesses. Missing **Shape** is the usual cause of long answers that wander off topic.`;
+function labelList(framework: Framework, ids: readonly string[]): string {
+	return ids.map(id => elementLabel(framework, id)).join(', ') || '–';
+}
 
 export const SIZE_LABELS: Record<RequestSize, string> = {
 	small: 'a small request',
@@ -46,8 +66,8 @@ export const JUSTIFICATION =
 	'Check The MAPS uses a low-cost model to check your prompt before it goes to Copilot.';
 
 /** "Parameters", "Parameters and Shape", "Mission, Parameters and Shape". */
-export function joinLabels(elements: readonly MapsElement[]): string {
-	const labels = elements.map(e => MAPS_LABELS[e]);
+export function joinLabels(framework: Framework, ids: readonly string[]): string {
+	const labels = ids.map(id => elementLabel(framework, id));
 	if (labels.length <= 1) {
 		return labels.join('');
 	}
@@ -55,11 +75,10 @@ export function joinLabels(elements: readonly MapsElement[]): string {
 }
 
 /** "For a task: Ask ✓ · Parameters ✗" */
-export function mapsChecklist(size: RequestSize, missing: readonly MapsElement[]): string {
-	const required = MAPS_ORDER.filter(e => REQUIRED_BY_SIZE[size].includes(e));
-	const marks = required.map(e => `${MAPS_LABELS[e]} ${missing.includes(e) ? '✗' : '✓'}`);
-	const label = SIZE_LABELS[size];
-	return `For ${label}: ${marks.join(' · ')}`;
+export function checklist(framework: Framework, size: RequestSize, missing: readonly string[]): string {
+	const required = orderElements(framework, framework.requiredBySize[size]);
+	const marks = required.map(id => `${elementLabel(framework, id)} ${missing.includes(id) ? '✗' : '✓'}`);
+	return `For ${SIZE_LABELS[size]}: ${marks.join(' · ')}`;
 }
 
 /** Wraps text in a code fence that can't be broken by backticks inside it. */

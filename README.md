@@ -4,6 +4,8 @@ A fast, low-cost pre-flight check for your Copilot prompts.
 
 Start a chat prompt with `@maps`. If the prompt is clear, it goes straight to Copilot with a small ✅ and you keep working. If something important is missing, you get one to three pointed questions and a suggested rewrite before Copilot spends time (and credits) guessing.
 
+Prompts are checked against MAPS (Mission, Ask, Parameters, Shape) by default. You can switch to CO-STAR, RISEN or RTF, or give your team its own checklist.
+
 The check uses the cheapest model available to you, never the premium model you chat with, and it never gets in the way: if anything goes wrong, your prompt is sent on unchecked.
 
 ## Why
@@ -45,9 +47,9 @@ A prompt that needs more:
 
 **Edit suggested prompt** puts the rewrite in the chat box (with `@maps` in front) so you can fill in the blanks. If you send it with a placeholder still unfilled, you'll get a gentle reminder instead of another check.
 
-## MAPS
+## MAPS, the default framework
 
-MAPS is a four-part checklist for prompts:
+MAPS, from Dan Martell, is a four-part checklist for prompts:
 
 | | Means | Example |
 |---|---|---|
@@ -66,6 +68,59 @@ Not every prompt needs all four. The check scales with the size of the request:
 | Design, architecture or technology choice | Mission, Ask, Parameters, Shape |
 
 Context Copilot already has counts: attached files, selected code, the active file (and its errors), your instructions files, and earlier prompts in the chat. "Fix this" with code selected passes.
+
+## Choosing a different framework
+
+MAPS is the default, but you can check prompts against another checklist. Run **Check The MAPS: Choose Prompt Framework**, or use the **Framework** item in the status bar menu.
+
+| Framework | Parts | Needed for a task | Needed for a design question |
+|---|---|---|---|
+| **MAPS** (Dan Martell), the default | Mission, Ask, Parameters, Shape | Ask, Parameters | all four |
+| **CO-STAR** (GovTech Singapore) | Context, Objective, Style, Tone, Audience, Response | Context, Objective | Context, Objective, Audience, Response |
+| **RISEN** (Kyle Balmer) | Role, Instructions, Steps, End goal, Narrowing | Instructions, Narrowing | Instructions, End goal, Narrowing |
+| **RTF** | Role, Task, Format | Task | Task, Format |
+| **Your own** | whatever your team uses | you decide | you decide |
+
+Every framework scales the same way: small edits only need the task itself to be clear, and parts that are optional for coding prompts (CO-STAR's Style and Tone, RISEN's Role and Steps, RTF's Role) are never flagged. CO-STAR was created by GovTech Singapore's Data Science & AI team and popularized by Sheila Teo. Messages, the checklist line, `/explain` and the checker's questions all use the framework you choose.
+
+### Your own framework
+
+Choosing **Define your own framework…** adds a starter framework to your settings and opens it. Or write it yourself in `settings.json`:
+
+```json
+"checkTheMaps.framework": "custom",
+"checkTheMaps.customFramework": {
+  "name": "Our checklist",
+  "elements": [
+    { "id": "ticket", "label": "Ticket", "meaning": "the issue or ticket this is for" },
+    { "id": "change", "label": "Change", "meaning": "the specific change you need" },
+    { "id": "context", "label": "Context", "meaning": "files, constraints, errors and what must not change" },
+    { "id": "done", "label": "Done when", "meaning": "how you'll know it worked, such as which tests should pass" }
+  ],
+  "taskElement": "change",
+  "requiredBySize": {
+    "task": ["change", "context"],
+    "large": ["ticket", "change", "context", "done"],
+    "design": ["ticket", "change", "context", "done"]
+  }
+}
+```
+
+- `elements` (required): up to eight parts. Plain strings work too: `["Goal", "Task", "Context"]`.
+- `taskElement`: the part that states the task. Small requests need only this one, and every size needs it. If you leave it out, a part named like "Task", "Ask" or "Objective" is used, or else the first part.
+- `requiredBySize`: which parts each size needs (`task`, `large`, `design`). Missing sizes get sensible defaults.
+
+Put both settings in the workspace settings (`.vscode/settings.json`) and commit them, and everyone on the team is checked against the same list. If the custom framework can't be used, you'll see what's wrong, and MAPS is used until it's fixed. In Restricted Mode, workspace settings can't choose the framework (or the checker model), so your user settings apply.
+
+## Copilot instructions (optional)
+
+Instructions files can't send prompts through `@maps`: by the time Copilot reads them, VS Code has already decided which participant answers. They can still help from the other side. **Check The MAPS: Add Guidance to Copilot Instructions** writes a short, clearly marked section into `.github/copilot-instructions.md` (read on every Copilot request) or `AGENTS.md` (read by other coding agents too). It asks the agent to:
+
+- check bigger requests against your framework before starting
+- ask one or two specific questions when something essential is missing, instead of guessing
+- state its assumptions, and keep answers to what was asked, in the format asked for
+
+This works even for prompts sent without `@maps`. It runs on your chat model, and a model can choose not to follow instructions, so treat it as a complement to the check, not a replacement. Run the command again to update the section (for example after changing frameworks) or remove it. Nothing else in the file is touched.
 
 ## Getting started
 
@@ -88,9 +143,9 @@ In the chat:
 | `@maps <prompt>` | Check the prompt, then send it to Copilot if it passes |
 | `@maps /check <prompt>` | Check the prompt without sending it |
 | `@maps /send <prompt>` | Skip the check and send straight to Copilot |
-| `@maps /explain` | Explain MAPS |
+| `@maps /explain` | Explain the active framework (MAPS by default) |
 
-In the Command Palette, under **Check The MAPS**: Start a Checked Prompt, Choose Checker Model, Set Strictness, Toggle Sending Passing Prompts Automatically, What Is MAPS?, Open Settings, Show Log and Show Menu.
+In the Command Palette, under **Check The MAPS**: Start a Checked Prompt, Choose Prompt Framework, Choose Checker Model, Set Strictness, Toggle Sending Passing Prompts Automatically, Explain the Prompt Framework, Add Guidance to Copilot Instructions, Open Settings, Show Log and Show Menu.
 
 The **MAPS** item in the status bar shows a green check after a passing prompt and a warning after a flagged one. Click it for settings and today's numbers.
 
@@ -105,6 +160,8 @@ To start checked prompts from the keyboard, add a keybinding for `checkTheMaps.s
 | Setting | Default | |
 |---|---|---|
 | `checkTheMaps.autoSend` | `true` | Send passing prompts to Copilot automatically. When off, you get a **Send to Copilot** button. |
+| `checkTheMaps.framework` | `maps` | The checklist prompts are checked against: `maps`, `co-star`, `risen`, `rtf` or `custom`. |
+| `checkTheMaps.customFramework` | empty | Your own framework, used when `framework` is `custom`. See [Your own framework](#your-own-framework). |
 | `checkTheMaps.strictness` | `lenient` | `lenient` flags only prompts likely to go wrong. `balanced` flags prompts missing something important for their size. `strict` flags any missing element the size needs. |
 | `checkTheMaps.model` | empty | The checker model's id. Empty means the cheapest model with a known price. Use **Choose Checker Model** rather than typing an id. |
 | `checkTheMaps.keepMapsInChatBox` | `true` | Put `@maps` back in the Chat view's chat box after a prompt is sent, so the next one is checked too. |
@@ -171,5 +228,5 @@ To publish to the Marketplace, create a publisher named `jacobcromwell` (or chan
 ## Roadmap
 
 - **Fully automatic mode** using VS Code's `UserPromptSubmit` agent hook (in preview), so prompts are checked without typing `@maps`.
-- **Team rubric.** A workspace file for project-specific checks, such as "bug reports must include the error message".
+- **Team rules beyond the checklist**, such as "bug reports must include the error message".
 - **Smarter local rules**, tuned from the pass and flag rates in the status bar menu.

@@ -8,6 +8,7 @@
 import * as vscode from 'vscode';
 import { addCost, currentStats, recordEvent, summarize, todayKey, underDailyLimit, type DailyStats } from './core/stats';
 import type { Strictness } from './core/triage';
+import { chooseFramework, currentFramework, manageInstructionsGuidance, reportFrameworkProblems } from './frameworkCommands';
 import { HandOffService, chatIsProbablyInView, explainInChat, startCheckedPrompt } from './handoff';
 import { CONFIG_SECTION, ModelResolver } from './modelResolver';
 import {
@@ -44,6 +45,8 @@ const COMMANDS = {
 	explain: 'checkTheMaps.explain',
 	openSettings: 'checkTheMaps.openSettings',
 	showLog: 'checkTheMaps.showLog',
+	chooseFramework: 'checkTheMaps.chooseFramework',
+	addInstructions: 'checkTheMaps.addInstructions',
 	handOff: HAND_OFF_COMMAND,
 	resend: RESEND_COMMAND,
 } as const;
@@ -58,6 +61,7 @@ function readSettings(): Settings {
 	const c = config();
 	const strictness = c.get<string>('strictness', 'lenient');
 	return {
+		framework: currentFramework().framework,
 		strictness: (STRICTNESS_VALUES as readonly string[]).includes(strictness) ? (strictness as Strictness) : 'lenient',
 		autoSend: c.get<boolean>('autoSend', true),
 		sendInMode: c.get<string>('sendInMode', ''),
@@ -111,7 +115,10 @@ export function activate(context: vscode.ExtensionContext): void {
 		update: (next: DailyStats) => void context.globalState.update(STATS_KEY, next),
 	};
 
-	const statusBar = new StatusBar(COMMANDS.showMenu, () => summarize(stats.get()));
+	const statusBar = new StatusBar(COMMANDS.showMenu, () => [
+		`Framework: ${currentFramework().framework.name}`,
+		`Today: ${summarize(stats.get())}`,
+	]);
 	statusBar.setVisible(config().get<boolean>('showStatusBar', true));
 	context.subscriptions.push(statusBar);
 
@@ -196,13 +203,27 @@ export function activate(context: vscode.ExtensionContext): void {
 			);
 		}),
 		vscode.commands.registerCommand(COMMANDS.setStrictness, () => pickStrictness()),
+		vscode.commands.registerCommand(COMMANDS.chooseFramework, () => chooseFramework(COMMANDS.explain)),
+		vscode.commands.registerCommand(COMMANDS.addInstructions, () => manageInstructionsGuidance()),
 		vscode.commands.registerCommand(COMMANDS.showMenu, () => showMenu(models, stats.get())),
 	);
 
+	const checkFrameworkSetting = () => reportFrameworkProblems(currentFramework().problems, message => log.warn(message));
+	checkFrameworkSetting();
+	// Wait for typing to pause, so a half-written custom framework doesn't raise a warning on every save.
+	let frameworkCheckTimer: ReturnType<typeof setTimeout> | undefined;
+	context.subscriptions.push({ dispose: () => clearTimeout(frameworkCheckTimer) });
 	context.subscriptions.push(
 		vscode.workspace.onDidChangeConfiguration(e => {
 			if (e.affectsConfiguration(`${CONFIG_SECTION}.showStatusBar`)) {
 				statusBar.setVisible(config().get<boolean>('showStatusBar', true));
+			}
+			if (
+				e.affectsConfiguration(`${CONFIG_SECTION}.framework`) ||
+				e.affectsConfiguration(`${CONFIG_SECTION}.customFramework`)
+			) {
+				clearTimeout(frameworkCheckTimer);
+				frameworkCheckTimer = setTimeout(checkFrameworkSetting, 3000);
 			}
 		}),
 	);
@@ -225,7 +246,7 @@ async function pickStrictness(): Promise<void> {
 			detail: 'Only flag prompts that are likely to go wrong. Fewest interruptions.',
 		},
 		{ value: 'balanced', label: 'Balanced', detail: 'Flag prompts that leave out something important for their size.' },
-		{ value: 'strict', label: 'Strict', detail: 'Flag any prompt that skips a MAPS element its size needs. Good for learning.' },
+		{ value: 'strict', label: 'Strict', detail: 'Flag any prompt that skips a part its size needs. Good for learning a framework.' },
 	];
 	for (const item of items) {
 		if (item.value === current) {
@@ -264,9 +285,19 @@ async function showMenu(models: ModelResolver, today: DailyStats): Promise<void>
 			run: () => vscode.commands.executeCommand(COMMANDS.toggleAutoSend),
 		},
 		{
+			label: `$(list-unordered) Framework: ${settings.framework.name}`,
+			description: 'Change',
+			run: () => vscode.commands.executeCommand(COMMANDS.chooseFramework),
+		},
+		{
 			label: `$(settings) Strictness: ${capitalized}`,
 			description: 'Change',
 			run: () => vscode.commands.executeCommand(COMMANDS.setStrictness),
+		},
+		{
+			label: '$(file-add) Add guidance to Copilot instructions',
+			description: 'Copilot checks requests too',
+			run: () => vscode.commands.executeCommand(COMMANDS.addInstructions),
 		},
 		{
 			label: '$(gear) All settings',
@@ -274,7 +305,7 @@ async function showMenu(models: ModelResolver, today: DailyStats): Promise<void>
 		},
 		{ label: 'Help', kind: vscode.QuickPickItemKind.Separator },
 		{
-			label: '$(book) What is MAPS?',
+			label: `$(book) What is ${settings.framework.name}?`,
 			run: () => vscode.commands.executeCommand(COMMANDS.explain),
 		},
 		{

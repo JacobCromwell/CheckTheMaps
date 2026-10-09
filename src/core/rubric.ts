@@ -1,36 +1,19 @@
 /**
- * The MAPS rubric: the prompt we send to the cheap checker model, and the
- * parsing and policy we apply to its answer.
+ * The rubric: the prompt we send to the cheap checker model, and the parsing
+ * and policy we apply to its answer.
  *
- * MAPS (Mission, Ask, Parameters, Shape) is the prompting framework popularized
- * by Dan Martell. The rubric scales it by request size: small edits only need a
- * clear Ask, while design work needs all four.
+ * The checklist comes from the selected framework (MAPS by default; see
+ * frameworks.ts). The rubric scales it by request size: small edits only need
+ * the task itself to be clear, while design work needs the whole checklist.
  *
  * This file has no dependency on the `vscode` module so it can be unit tested.
  */
 
+import { DEFAULT_FRAMEWORK, SIZES, elementLabel, orderElements, resolveElementId, type Framework } from './frameworks';
 import type { RequestSize, Strictness } from './triage';
 
-export type MapsElement = 'mission' | 'ask' | 'parameters' | 'shape';
-
-export const MAPS_ORDER: readonly MapsElement[] = ['mission', 'ask', 'parameters', 'shape'];
-
-export const MAPS_LABELS: Record<MapsElement, string> = {
-	mission: 'Mission',
-	ask: 'Ask',
-	parameters: 'Parameters',
-	shape: 'Shape',
-};
-
-/** Which MAPS elements each request size needs. */
-export const REQUIRED_BY_SIZE: Record<RequestSize, readonly MapsElement[]> = {
-	small: ['ask'],
-	task: ['ask', 'parameters'],
-	large: ['ask', 'parameters', 'shape'],
-	design: ['mission', 'ask', 'parameters', 'shape'],
-};
-
-const SIZES: readonly RequestSize[] = ['small', 'task', 'large', 'design'];
+/** An element id from the active framework, such as `parameters`. */
+export type ElementId = string;
 
 /** What Copilot will be able to see alongside the prompt. */
 export interface CheckContext {
@@ -50,7 +33,7 @@ export interface CheckContext {
 export interface CheckVerdict {
 	readonly verdict: 'pass' | 'improve';
 	readonly size: RequestSize;
-	readonly missing: readonly MapsElement[];
+	readonly missing: readonly ElementId[];
 	readonly why: string;
 	readonly questions: readonly string[];
 	readonly rewrite: string;
@@ -100,32 +83,52 @@ function clipLine(text: string, maxLength: number): string {
 	return oneLine.length > maxLength ? `${oneLine.slice(0, maxLength - 1)}…` : oneLine;
 }
 
+function listLabels(framework: Framework, ids: readonly string[]): string {
+	const labels = ids.map(id => elementLabel(framework, id));
+	if (labels.length <= 1) {
+		return labels.join('');
+	}
+	return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+}
+
+const SIZE_DESCRIPTIONS: Record<RequestSize, string> = {
+	small: 'a mechanical or tightly scoped edit or question (rename something, fix this error, explain this function)',
+	task: 'a bug fix or a feature inside existing code (the prompt should be enough to find the work and know when it is done)',
+	large: 'a multi-file refactor, rewrite or migration',
+	design: 'architecture, system design, technology choices or open-ended planning',
+};
+
 export function buildCheckPrompt(
 	prompt: string,
 	sizeHint: RequestSize,
 	ctx: CheckContext,
 	strictness: Strictness,
+	framework: Framework = DEFAULT_FRAMEWORK,
 ): string {
 	const safePrompt = clipPrompt(prompt).replace(/<\/developer_prompt>/gi, '<\\/developer_prompt>');
+	const elementLines = framework.elements
+		.map(e => `- ${e.label} ("${e.id}")${e.meaning ? `: ${e.meaning.trim().replace(/[.\s]+$/, '')}` : ''}.`)
+		.join('\n');
+	const sizeLines = SIZES.map(
+		size => `- ${size}: ${SIZE_DESCRIPTIONS[size]}. Needs: ${listLabels(framework, framework.requiredBySize[size]) || 'nothing beyond a clear request'}.`,
+	).join('\n');
+	const optional = framework.elements.filter(e => !SIZES.some(size => framework.requiredBySize[size].includes(e.id)));
+	const optionalLine = optional.length
+		? `\n- ${listLabels(framework, optional.map(e => e.id))} ${optional.length === 1 ? 'is' : 'are'} optional: never flag ${optional.length === 1 ? 'it' : 'them'} as missing.`
+		: '';
 	return `You check prompts that a developer is about to send to an AI coding agent (GitHub Copilot in VS Code). Decide whether the prompt gives the agent enough to do the work well. Do not answer or carry out the prompt.
 
-Use MAPS:
-- Mission: the goal behind the request, the outcome that matters.
-- Ask: the specific task or deliverable.
-- Parameters: facts the agent can't guess, such as constraints, stack, scale, which files, what must not change, error messages, or examples.
-- Shape: the form and size of the answer, such as a plan, a diff, a short answer, options with trade-offs, or a length limit.
+Use the ${framework.name} checklist. In these descriptions, "you" means the developer:
+${elementLines}
 
 First size the request, then require only what that size needs:
-- small: a mechanical or tightly scoped edit or question (rename something, fix this error, explain this function). Needs: Ask.
-- task: a bug fix or a feature inside existing code. Needs: Ask and Parameters (enough to find the work and know when it is done).
-- large: a multi-file refactor, rewrite or migration. Needs: Ask, Parameters and Shape.
-- design: architecture, system design, technology choices or open-ended planning. Needs: Mission, Ask, Parameters and Shape.
+${sizeLines}
 A quick local scan suggests this is a "${sizeHint}" request. Use your own judgment.
 
 Rules:
-- Context the agent already has counts as Parameters: attached files, selected code, the active file and earlier prompts. A short follow-up that builds on an earlier prompt is fine.
+- Context the agent already has counts toward any element it covers: attached files, selected code, the active file and earlier prompts. Don't ask for facts the agent can see. A short follow-up that builds on an earlier prompt is fine.${optionalLine}
 - ${STRICTNESS_RULES[strictness]}${ctx.isRevision ? '\n- The developer already revised this prompt once after feedback. Pass unless something essential is still missing.' : ''}
-- Never flag spelling, grammar, tone, politeness or length.
+- Never flag spelling, grammar, politeness or length.
 - Questions: at most 3. Each must be specific to this prompt, and its answer must change the solution. Do not ask generic questions such as "What is your goal?".
 - Rewrite: keep the developer's words and intent. Add only the missing pieces, using [bracketed placeholders] for facts you don't know. Never invent facts. Keep it under 120 words.
 - Write "why", the questions and the rewrite in the same language as the developer's prompt.
@@ -141,7 +144,7 @@ ${safePrompt}
 
 Respond with JSON only, with no code fences and no other text:
 {"size":"small|task|large|design","verdict":"pass|improve","missing":[],"why":"","questions":[],"rewrite":""}
-- "missing" lists only needed elements that are absent, using "mission", "ask", "parameters" and "shape".
+- "missing" lists only needed elements that are absent, using these ids: ${framework.elements.map(e => `"${e.id}"`).join(', ')}.
 - "why" is one plain sentence of 20 words or fewer.
 - For "pass", leave "missing", "questions" and "rewrite" empty.`;
 }
@@ -256,7 +259,7 @@ export function isLikelyRevision(previous: string, current: string): boolean {
  * Parses and validates the checker's reply. Returns `undefined` when the reply
  * can't be understood, in which case the caller lets the prompt through.
  */
-export function parseVerdict(raw: string): CheckVerdict | undefined {
+export function parseVerdict(raw: string, framework: Framework = DEFAULT_FRAMEWORK): CheckVerdict | undefined {
 	const data = extractJsonObject(raw);
 	if (!data || typeof data !== 'object') {
 		return undefined;
@@ -271,16 +274,16 @@ export function parseVerdict(raw: string): CheckVerdict | undefined {
 	const sizeText = typeof obj.size === 'string' ? obj.size.toLowerCase().trim() : '';
 	const size: RequestSize = (SIZES as readonly string[]).includes(sizeText) ? (sizeText as RequestSize) : 'task';
 
-	const missingSet = new Set<MapsElement>();
+	const missingIds: string[] = [];
 	if (Array.isArray(obj.missing)) {
 		for (const item of obj.missing) {
-			const key = typeof item === 'string' ? item.toLowerCase().trim() : '';
-			if ((MAPS_ORDER as readonly string[]).includes(key)) {
-				missingSet.add(key as MapsElement);
+			const id = typeof item === 'string' ? resolveElementId(framework, item) : undefined;
+			if (id) {
+				missingIds.push(id);
 			}
 		}
 	}
-	const missing = MAPS_ORDER.filter(element => missingSet.has(element));
+	const missing = orderElements(framework, missingIds);
 
 	const questions = Array.isArray(obj.questions)
 		? obj.questions.map(q => cleanLine(q, 200)).filter(Boolean).slice(0, 3)
@@ -288,33 +291,40 @@ export function parseVerdict(raw: string): CheckVerdict | undefined {
 
 	const rewrite = typeof obj.rewrite === 'string' ? obj.rewrite.trim().slice(0, 1500) : '';
 
-	return applyPolicy({
-		verdict: verdictText,
-		size,
-		missing,
-		why: cleanLine(obj.why, 200),
-		questions,
-		rewrite,
-	});
+	return applyPolicy(
+		{
+			verdict: verdictText,
+			size,
+			missing,
+			why: cleanLine(obj.why, 200),
+			questions,
+			rewrite,
+		},
+		framework,
+	);
 }
 
 /**
  * Rules we enforce no matter what the model said, so that a confused checker
  * can't nag about small requests or flag a prompt without saying why.
  */
-export function applyPolicy(verdict: CheckVerdict): CheckVerdict {
+export function applyPolicy(verdict: CheckVerdict, framework: Framework = DEFAULT_FRAMEWORK): CheckVerdict {
 	const pass = (v: CheckVerdict): CheckVerdict => ({ ...v, verdict: 'pass', missing: [], questions: [], rewrite: '' });
 
 	if (verdict.verdict === 'pass') {
 		return pass(verdict);
 	}
-	// Small requests only need a clear Ask; anything the model says beyond that is noise.
-	if (verdict.size === 'small' && !verdict.missing.includes('ask')) {
+	// Small requests only need a clear task; anything the model says beyond that is noise.
+	if (verdict.size === 'small' && !verdict.missing.includes(framework.taskElement)) {
 		return pass(verdict);
 	}
 	// Only count elements this size actually needs.
-	const required = REQUIRED_BY_SIZE[verdict.size];
+	const required = framework.requiredBySize[verdict.size];
 	const missing = verdict.missing.filter(element => required.includes(element));
+	// Everything the model reported was optional or not needed at this size, so its questions are too.
+	if (verdict.missing.length > 0 && missing.length === 0) {
+		return pass(verdict);
+	}
 	if (missing.length === 0 && verdict.questions.length === 0) {
 		return pass(verdict);
 	}

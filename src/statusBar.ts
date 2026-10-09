@@ -29,7 +29,8 @@ export class StatusBar implements vscode.Disposable {
 
 	constructor(
 		command: string,
-		private readonly summary: () => string,
+		/** Extra tooltip lines, such as the framework and today's numbers. */
+		private readonly details: () => string[],
 	) {
 		this.item = vscode.window.createStatusBarItem('checkTheMaps.status', vscode.StatusBarAlignment.Right, 100);
 		this.item.name = 'Check The MAPS';
@@ -61,7 +62,11 @@ export class StatusBar implements vscode.Disposable {
 			tooltip.appendMarkdown('\n\n');
 			tooltip.appendText(detail);
 		}
-		tooltip.appendMarkdown(`\n\nToday: ${this.summary()}\n\nClick for options.`);
+		for (const line of this.details()) {
+			tooltip.appendMarkdown('\n\n');
+			tooltip.appendText(line);
+		}
+		tooltip.appendMarkdown('\n\nClick for options.');
 		this.item.tooltip = tooltip;
 
 		if (state !== 'idle' && state !== 'checking') {

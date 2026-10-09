@@ -33,7 +33,14 @@
   ],
   "capabilities": {
     "untrustedWorkspaces": {
-      "supported": true
+      "supported": "limited",
+      "description": "In Restricted Mode, the workspace can't choose the framework, the checker model or the chat mode. Your user settings are used instead.",
+      "restrictedConfigurations": [
+        "checkTheMaps.framework",
+        "checkTheMaps.customFramework",
+        "checkTheMaps.model",
+        "checkTheMaps.sendInMode"
+      ]
     },
     "virtualWorkspaces": true
   },
@@ -57,7 +64,7 @@
           },
           {
             "name": "explain",
-            "description": "What MAPS means and when each part matters"
+            "description": "Explain the active prompt framework (MAPS by default)"
           }
         ]
       }
@@ -80,13 +87,23 @@
         "category": "Check The MAPS"
       },
       {
+        "command": "checkTheMaps.chooseFramework",
+        "title": "Choose Prompt Framework",
+        "category": "Check The MAPS"
+      },
+      {
         "command": "checkTheMaps.setStrictness",
         "title": "Set Strictness",
         "category": "Check The MAPS"
       },
       {
         "command": "checkTheMaps.explain",
-        "title": "What Is MAPS?",
+        "title": "Explain the Prompt Framework",
+        "category": "Check The MAPS"
+      },
+      {
+        "command": "checkTheMaps.addInstructions",
+        "title": "Add Guidance to Copilot Instructions",
         "category": "Check The MAPS"
       },
       {
@@ -136,10 +153,37 @@
           "order": 0,
           "markdownDescription": "Send prompts that pass the check to Copilot automatically. When off, a passing prompt shows a **Send to Copilot** button instead."
         },
+        "checkTheMaps.framework": {
+          "type": "string",
+          "default": "maps",
+          "enum": [
+            "maps",
+            "co-star",
+            "risen",
+            "rtf",
+            "custom"
+          ],
+          "enumItemLabels": [
+            "MAPS (Dan Martell)",
+            "CO-STAR",
+            "RISEN (Kyle Balmer)",
+            "RTF",
+            "Custom"
+          ],
+          "enumDescriptions": [
+            "Mission, Ask, Parameters, Shape. The default.",
+            "Context, Objective, Style, Tone, Audience, Response. From GovTech Singapore's Data Science & AI team. Style and Tone are optional for coding prompts.",
+            "Role, Instructions, Steps, End goal, Narrowing. Role and Steps are optional for coding prompts.",
+            "Role, Task, Format. The lightest checklist. Role is optional for coding prompts.",
+            "Your own checklist, defined in Check The MAPS: Custom Framework."
+          ],
+          "markdownDescription": "The checklist prompts are checked against. Each framework says which of its parts each request size needs, so small edits stay quick. Set this in your workspace settings to share a choice with your team. [Choose Prompt Framework](command:checkTheMaps.chooseFramework) compares them.",
+          "order": 1
+        },
         "checkTheMaps.strictness": {
           "type": "string",
           "default": "lenient",
-          "order": 1,
+          "order": 2,
           "enum": [
             "lenient",
             "balanced",
@@ -148,26 +192,120 @@
           "enumDescriptions": [
             "Only flag prompts that are likely to go wrong. Fewest interruptions.",
             "Flag prompts that leave out something important for their size.",
-            "Flag any prompt that skips a MAPS element its size needs. Good for learning MAPS."
+            "Flag any prompt that skips a part its size needs. Good for learning a framework."
           ],
           "markdownDescription": "How picky the check is. Small, specific requests (like renaming a function) always pass."
+        },
+        "checkTheMaps.customFramework": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Your own framework, used when **Framework** is set to `custom`. List its parts in `elements`, name the part that states the task itself in `taskElement`, and say which parts each request size needs in `requiredBySize` (sizes: `small`, `task`, `large`, `design`). Missing pieces get sensible defaults. [Choose Prompt Framework](command:checkTheMaps.chooseFramework) can create a starter framework for you.",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Short name shown in messages, such as \"Our checklist\"."
+            },
+            "elements": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "description": "A part, given by its label alone."
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "label"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Short id used internally, such as \"context\". Defaults to the label in lowercase."
+                      },
+                      "label": {
+                        "type": "string",
+                        "description": "Display name, such as \"Context\"."
+                      },
+                      "meaning": {
+                        "type": "string",
+                        "description": "What this part means, as a phrase, such as \"files, constraints and what must not change\"."
+                      },
+                      "example": {
+                        "type": "string",
+                        "description": "An optional short example, shown in /explain."
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "description": "The parts of the checklist, in order."
+            },
+            "taskElement": {
+              "type": "string",
+              "description": "The id of the part that states the task itself. Small requests need only this part."
+            },
+            "requiredBySize": {
+              "type": "object",
+              "description": "Which parts each request size needs, by id.",
+              "properties": {
+                "small": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true,
+                  "description": "Small, specific edits and questions. Only the task part is checked."
+                },
+                "task": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true,
+                  "description": "Bug fixes and features in existing code."
+                },
+                "large": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true,
+                  "description": "Multi-file refactors and migrations."
+                },
+                "design": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true,
+                  "description": "Design, architecture and technology questions."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "order": 3
         },
         "checkTheMaps.model": {
           "type": "string",
           "default": "",
-          "order": 2,
+          "order": 4,
           "markdownDescription": "The id of the model that checks your prompts. Leave empty to use the cheapest model with a known price; a premium model is never picked automatically. [Choose Checker Model](command:checkTheMaps.chooseModel) shows every available model with its cost per check."
         },
         "checkTheMaps.keepMapsInChatBox": {
           "type": "boolean",
           "default": true,
-          "order": 3,
+          "order": 5,
           "markdownDescription": "After a prompt is sent to Copilot, put `@maps` back in the Chat view's chat box so your next prompt is checked too. Delete it to send a prompt without a check."
         },
         "checkTheMaps.sendInMode": {
           "type": "string",
           "default": "",
-          "order": 4,
+          "order": 6,
           "markdownDescription": "Chat mode to send passing prompts in, such as `agent` or `ask`, or the name of a custom agent. Leave empty to keep whatever mode the chat is in. Note that switching into or out of `edit` mode can start a new chat session."
         },
         "checkTheMaps.timeoutSeconds": {
@@ -175,20 +313,20 @@
           "default": 8,
           "minimum": 2,
           "maximum": 60,
-          "order": 5,
+          "order": 7,
           "markdownDescription": "Seconds to wait for the checker before sending the prompt on unchecked. Checks usually take one to two seconds."
         },
         "checkTheMaps.dailyCheckLimit": {
           "type": "number",
           "default": 300,
           "minimum": 0,
-          "order": 6,
+          "order": 8,
           "markdownDescription": "Most model checks per day. After that, prompts are sent on unchecked. Prompts that pass the local rules don't count. Set to `0` for no limit."
         },
         "checkTheMaps.showStatusBar": {
           "type": "boolean",
           "default": true,
-          "order": 7,
+          "order": 9,
           "markdownDescription": "Show the MAPS item in the status bar, with a green check after a passing prompt."
         }
       }
@@ -208,6 +346,18 @@
             },
             "completionEvents": [
               "onCommand:checkTheMaps.startCheckedPrompt"
+            ]
+          },
+          {
+            "id": "chooseFramework",
+            "title": "Pick your prompt framework (optional)",
+            "description": "Prompts are checked against MAPS (Dan Martell) by default. You can switch to CO-STAR, RISEN or RTF, or define your own checklist for your team.\n[Choose Prompt Framework](command:checkTheMaps.chooseFramework)",
+            "media": {
+              "markdown": "media/walkthrough/frameworks.md"
+            },
+            "completionEvents": [
+              "onCommand:checkTheMaps.chooseFramework",
+              "onSettingChanged:checkTheMaps.framework"
             ]
           },
           {
@@ -234,9 +384,20 @@
             ]
           },
           {
+            "id": "instructions",
+            "title": "Let Copilot check too (optional)",
+            "description": "Add a short section to your repository's Copilot instructions, so Copilot itself asks before guessing on big requests and keeps answers in scope, even for prompts you send without @maps.\n[Add Guidance to Copilot Instructions](command:checkTheMaps.addInstructions)",
+            "media": {
+              "markdown": "media/walkthrough/instructions.md"
+            },
+            "completionEvents": [
+              "onCommand:checkTheMaps.addInstructions"
+            ]
+          },
+          {
             "id": "learn",
-            "title": "Learn MAPS",
-            "description": "Mission, Ask, Parameters, Shape: what each one means and which requests need it.\n[What Is MAPS?](command:checkTheMaps.explain)",
+            "title": "Learn your framework",
+            "description": "What each part of your framework means, and which requests need it.\n[Explain the Prompt Framework](command:checkTheMaps.explain)",
             "media": {
               "markdown": "media/walkthrough/learn.md"
             },

@@ -3,6 +3,7 @@ import './support/stubVscode';
 import { strict as assert } from 'node:assert';
 import { beforeEach, describe, it } from 'node:test';
 import type * as vscodeTypes from 'vscode';
+import { CO_STAR, MAPS } from '../src/core/frameworks';
 import type { StatsEvent } from '../src/core/stats';
 import {
 	createFollowupProvider,
@@ -106,6 +107,7 @@ function setup(scenario: Scenario = {}) {
 		logs: [],
 	};
 	const settings: Settings = {
+		framework: MAPS,
 		strictness: 'lenient',
 		autoSend: true,
 		sendInMode: '',
@@ -220,7 +222,7 @@ describe('participant: passing prompts', () => {
 	it('passes small prompts locally and hands them off, with no model call', async () => {
 		const { record, handler } = setup();
 		const meta = await run(handler, record, 'rename the function helloWorld to helloDolly');
-		assert.deepEqual(meta, { outcome: 'passed', size: 'small', source: 'local', handOffId: 'id-1' });
+		assert.deepEqual(meta, { framework: 'MAPS', outcome: 'passed', size: 'small', source: 'local', handOffId: 'id-1' });
 		assert.equal(record.modelPrompts.length, 0);
 		assert.equal(record.handOffs.length, 1);
 		assert.deepEqual(record.handOffs[0], {
@@ -240,7 +242,7 @@ describe('participant: passing prompts', () => {
 	it('passes prompts the model approves and records the cost', async () => {
 		const { record, handler } = setup();
 		const meta = await run(handler, record, 'add caching to the user lookup so repeated calls are faster');
-		assert.deepEqual(meta, { outcome: 'passed', size: 'task', source: 'model', handOffId: 'id-1' });
+		assert.deepEqual(meta, { framework: 'MAPS', outcome: 'passed', size: 'task', source: 'model', handOffId: 'id-1' });
 		assert.equal(record.modelPrompts.length, 1);
 		assert.equal(record.handOffs.length, 1);
 		assert.deepEqual(record.events, ['modelChecks', 'passedByModel']);
@@ -361,6 +363,49 @@ describe('participant: flagged prompts', () => {
 		assert.equal(record.modelPrompts.length, 1);
 		assert.match(record.modelPrompts[0], /already revised this prompt/);
 		assert.match(record.modelPrompts[0], /- help me design a caching layer/);
+	});
+});
+
+describe('participant: other frameworks', () => {
+	const flag = JSON.stringify({
+		size: 'design',
+		verdict: 'improve',
+		missing: ['Response', 'audience', 'style'],
+		why: 'Who is it for, and in what form?',
+		questions: ['Who will read this?'],
+		rewrite: '',
+	});
+
+	it('checks against the selected framework and speaks its language', async () => {
+		const { record, handler } = setup({ settings: { framework: CO_STAR }, model: () => flag });
+		const meta = await run(handler, record, 'help me design a caching layer');
+		assert.match(record.modelPrompts[0], /Use the CO-STAR checklist/);
+		assert.match(record.modelPrompts[0], /Style and Tone are optional: never flag them as missing/);
+		// Style isn't required for any size, so it's dropped; labels are mapped to ids.
+		assert.deepEqual(meta.missing, ['audience', 'response']);
+		assert.equal(meta.framework, 'CO-STAR');
+		assert.match(allText(record), /Missing Audience and Response\./);
+		assert.match(allText(record), /For a design question: Context ✓ · Objective ✓ · Audience ✗ · Response ✗/);
+	});
+
+	it('offers to explain the framework that was used', () => {
+		const provider = createFollowupProvider(() => undefined);
+		const followups = provider.provideFollowups({ metadata: { outcome: 'flagged', framework: 'CO-STAR' } }, { history: [] }, token());
+		assert.deepEqual(followups, [{ prompt: 'What is CO-STAR?', label: 'What is CO-STAR?', command: 'explain' }]);
+	});
+
+	it('/explain and help describe the selected framework', async () => {
+		const { record, handler } = setup({ settings: { framework: CO_STAR } });
+		await run(handler, record, '', { command: 'explain' });
+		await run(handler, record, '');
+		assert.match(record.markdown[0], /\*\*CO-STAR\*\*/);
+		assert.match(record.markdown[1], /checks your prompt against CO-STAR/);
+	});
+
+	it('/check names the framework on a pass', async () => {
+		const { record, handler } = setup({ settings: { framework: CO_STAR } });
+		await run(handler, record, 'rename helloWorld to helloDolly', { command: 'check' });
+		assert.match(allText(record), /✅ \*\*Passes CO-STAR\.\*\* For a small request: Objective ✓/);
 	});
 });
 
