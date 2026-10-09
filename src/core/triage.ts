@@ -64,7 +64,7 @@ const RESTRUCTURE_RE = /\b(refactor|restructure|rewrite|reorgani[sz]e)\b/i;
 
 /** Starts with a mechanical edit verb. */
 const MECHANICAL_RE =
-	/^(please\s+|can you\s+|could you\s+)?(rename|change|replace|delete|remove|add|insert|move|format|sort|indent|uncomment|comment( out)?|bump|update|fix (the )?typos?|convert|extract|inline|wrap|unwrap|make|mark|set|swap|reorder|capitali[sz]e|lowercase|uppercase|import|export|undo|revert|translate|document|write (unit |integration |e2e )?tests? for|add (docs|docstrings|comments|jsdoc|types|type hints) (to|for))\b/i;
+	/^(please\s+|can you\s+|could you\s+)?(rename|change|replace|delete|remove|add|insert|move|format|sort|indent|uncomment|comment( out)?|bump|update|fix (the )?typos?|convert|extract|inline|wrap|unwrap|make|mark|set|swap|reorder|capitali[sz]e|lowercase|uppercase|import|export|undo|revert|translate|document|use|enable|disable|write (unit |integration |e2e )?tests? for|add (docs|docstrings|comments|jsdoc|types|type hints) (to|for))\b/i;
 
 /** "rename X to Y" or "change the name of X to Y": specific even without code formatting. */
 const RENAME_RE = /^(please\s+|can you\s+|could you\s+)?(rename|change the name of)\b.+\bto\b.+/i;
@@ -100,8 +100,19 @@ const PRODUCT_NAMES = new Set(
 );
 
 /** camelCase with a real lowercase prefix (fetchUser, getUser), which rules out iOS, eBay and gRPC. */
-const CAMEL_CASE_RE = /\b[a-z]{2,}[A-Z][a-z0-9]+[A-Za-z0-9]*\b/g;
-const PASCAL_CASE_RE = /\b[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*\b/g;
+const CAMEL_CASE_RE = /^[a-z]{2,}[A-Z][a-z0-9]+[A-Za-z0-9]*$/;
+const PASCAL_CASE_RE = /^[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*$/;
+
+/**
+ * Verbs that often introduce a new dependency or feature ("add NextAuth",
+ * "set up KeyCloak"). After these, a capitalized name is more likely a product
+ * than a symbol in the code, so only a named target ("... to parseConfig") counts.
+ */
+const INTEGRATION_RE =
+	/^(please\s+|can you\s+|could you\s+)?(add|integrate|set ?up|install|use|switch to|support|enable|configure|implement)\b/i;
+
+/** An identifier in target position: "to parseConfig", "in AuthController". */
+const TARGET_RE = /\b(?:to|in|into|for|on|inside|within|from|of)\s+(?:the\s+|a\s+|an\s+|our\s+|my\s+)?([A-Za-z_$][\w$]*)/gi;
 
 /**
  * Something concrete the agent can locate: backticked code, a quoted string,
@@ -123,13 +134,18 @@ export function countWords(text: string): number {
 	return words.length;
 }
 
-function hasCodeIdentifier(text: string): boolean {
-	const candidates = [...(text.match(CAMEL_CASE_RE) ?? []), ...(text.match(PASCAL_CASE_RE) ?? [])];
-	return candidates.some(word => !PRODUCT_NAMES.has(word.toLowerCase()));
+function isCodeIdentifier(word: string): boolean {
+	return (CAMEL_CASE_RE.test(word) || PASCAL_CASE_RE.test(word)) && !PRODUCT_NAMES.has(word.toLowerCase());
 }
 
 export function looksConcrete(text: string): boolean {
-	return CONCRETE_PATTERNS.some(re => re.test(text)) || hasCodeIdentifier(text);
+	if (CONCRETE_PATTERNS.some(re => re.test(text))) {
+		return true;
+	}
+	if (INTEGRATION_RE.test(text.trim())) {
+		return [...text.matchAll(TARGET_RE)].some(match => isCodeIdentifier(match[1]));
+	}
+	return (text.match(/[A-Za-z_$][\w$]*/g) ?? []).some(isCodeIdentifier);
 }
 
 export function triage(input: TriageInput): TriageResult {

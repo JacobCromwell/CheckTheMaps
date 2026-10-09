@@ -26,14 +26,19 @@ const CHAT_ATTACH_FILE = 'workbench.action.chat.attachFile';
 const CHAT_ATTACH_FOLDER = 'workbench.action.chat.attachFolder';
 const CHAT_SET_MODE = 'workbench.action.chat.toggleAgentMode';
 
-/** Built-in chat mode ids. Custom agents are switched by name through `chat.open` instead. */
-const BUILT_IN_MODES = new Set(['ask', 'edit', 'agent']);
+/**
+ * Modes that are safe to switch to in the focused chat. The switch command moves
+ * to the *next* mode when it can't find the one asked for (Agent mode is missing
+ * without a tools agent), so every other mode goes through `chat.open`, which
+ * ignores modes it doesn't know.
+ */
+const SAFE_FOCUSED_MODES = new Set(['ask']);
 
 /** Backstop: send anyway if VS Code hasn't asked for followups by then. */
 export const FALLBACK_DELAY_MS = 1500;
 
 /** Wait before putting `@maps ` back in the chat box, so the submit has cleared it first. */
-const REFILL_DELAY_MS = 700;
+export const REFILL_DELAY_MS = 1200;
 
 /** How many recent hand-offs the ↻ link can resend. */
 const RECENT_LIMIT = 25;
@@ -41,8 +46,11 @@ const RECENT_LIMIT = 25;
 export interface HandOffHooks {
 	/** Called after a hand-off is delivered to the chat. */
 	onSent(request: HandOffRequest): void;
-	/** Whether to put `@maps ` back in the chat box after sending. */
-	shouldRefill(): boolean;
+	/**
+	 * Whether to put `@maps ` back in the chat box. `sentAt` is when the prompt was
+	 * sent, so the check can skip the refill if the developer has moved on since.
+	 */
+	shouldRefill(sentAt: number): boolean;
 	log(message: string): void;
 }
 
@@ -134,12 +142,15 @@ export class HandOffService implements vscode.Disposable {
 
 	/** Sends into the chat the developer last used, wherever it is. Falls back to the Chat view. */
 	private async submitToFocusedChat(request: HandOffRequest): Promise<void> {
-		if (request.mode && !BUILT_IN_MODES.has(request.mode)) {
-			// Custom agents can only be selected by name through chat.open.
+		if (request.mode && !SAFE_FOCUSED_MODES.has(request.mode)) {
 			await this.openInChatView(request);
 			return;
 		}
 		try {
+			// Switch mode first: a mode switch can start a new session, which would drop attachments.
+			if (request.mode) {
+				await vscode.commands.executeCommand(CHAT_SET_MODE, { modeId: request.mode });
+			}
 			const files = toUris(request.files);
 			const folders = toUris(request.folders);
 			if (files.length) {
@@ -147,9 +158,6 @@ export class HandOffService implements vscode.Disposable {
 			}
 			if (folders.length) {
 				await vscode.commands.executeCommand(CHAT_ATTACH_FOLDER, folders[0], folders);
-			}
-			if (request.mode) {
-				await vscode.commands.executeCommand(CHAT_SET_MODE, { modeId: request.mode });
 			}
 			await vscode.commands.executeCommand(CHAT_SUBMIT, { inputValue: request.prompt });
 		} catch (error) {
@@ -180,9 +188,10 @@ export class HandOffService implements vscode.Disposable {
 	 * prompt. Put it back, so the next prompt is checked too.
 	 */
 	private scheduleRefill(): void {
+		const sentAt = Date.now();
 		const timer = setTimeout(() => {
 			this.timers.delete(timer);
-			if (!this.hooks.shouldRefill()) {
+			if (!this.hooks.shouldRefill(sentAt)) {
 				return;
 			}
 			void Promise.resolve(

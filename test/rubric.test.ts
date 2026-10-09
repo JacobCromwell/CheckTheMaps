@@ -150,6 +150,7 @@ describe('isLikelyRevision', () => {
 	it('does not treat a new request as a revision', () => {
 		assert.ok(!isLikelyRevision('help me design a caching layer', 'why does the payment webhook retry forever'));
 		assert.ok(!isLikelyRevision('do it', 'anything'));
+		assert.ok(!isLikelyRevision('add caching to the user API', 'write tests for the user API'));
 	});
 });
 

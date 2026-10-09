@@ -248,7 +248,8 @@ export function isLikelyRevision(previous: string, current: string): boolean {
 			shared++;
 		}
 	}
-	return shared / before.size >= 0.4;
+	// Short prompts share a word by chance, so require two.
+	return shared >= 2 && shared / before.size >= 0.4;
 }
 
 /**

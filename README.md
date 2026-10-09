@@ -108,7 +108,7 @@ To start checked prompts from the keyboard, add a keybinding for `checkTheMaps.s
 | `checkTheMaps.strictness` | `lenient` | `lenient` flags only prompts likely to go wrong. `balanced` flags prompts missing something important for their size. `strict` flags any missing element the size needs. |
 | `checkTheMaps.model` | empty | The checker model's id. Empty means the cheapest model with a known price. Use **Choose Checker Model** rather than typing an id. |
 | `checkTheMaps.keepMapsInChatBox` | `true` | Put `@maps` back in the Chat view's chat box after a prompt is sent, so the next one is checked too. |
-| `checkTheMaps.sendInMode` | empty | Chat mode to send passing prompts in (`agent`, `ask` or a custom agent's name). Empty keeps the current mode. Switching into or out of `edit` can start a new chat session. |
+| `checkTheMaps.sendInMode` | empty | Chat mode to send passing prompts in (`agent`, `ask` or a custom agent's name). Empty keeps the current mode, and is the most reliable choice. Any mode other than `ask` is set through the Chat view. Switching into or out of `edit` can start a new chat session. |
 | `checkTheMaps.timeoutSeconds` | `8` | How long to wait for the checker before sending unchecked. |
 | `checkTheMaps.dailyCheckLimit` | `300` | Most model checks per day; `0` means no limit. Prompts passed by the local rules don't count. |
 | `checkTheMaps.showStatusBar` | `true` | Show the MAPS status bar item. |
@@ -140,7 +140,8 @@ Every failure path (no suitable model, access not granted, timeout, quota, unrea
 
 - **A prompt that doesn't arrive.** VS Code ignores a new chat request while another is in progress, and gives extensions no way to tell. If a prompt ever doesn't reach Copilot (for example because you sent something else in the same moment), click the small **↻** next to "Sent to Copilot".
 - **Images and pasted content** can't be carried over to Copilot. When a prompt has them, it goes back into the chat box so you can add them again and send.
-- **The Chat view is used for editing.** **Edit suggested prompt** and putting `@maps` back in the chat box always use the Chat view. If you chat in an editor tab, `@maps` isn't put back (you'll need to type it), and edited prompts open in the Chat view.
+- **The Chat view is used for editing.** **Edit suggested prompt** and putting `@maps` back in the chat box always use the Chat view. If you chat in an editor tab, `@maps` isn't put back (you'll need to type it), and edited prompts open in the Chat view. `@maps` also isn't put back once you've clicked into an editor or switched files after sending, so it never pulls focus away from your code.
+- **Selections become whole files.** If you attached a selection, Copilot receives the whole file it came from.
 - **Copilot sees the `@maps` exchange.** Copilot reads the whole conversation, so it also sees your `@maps` message and the reply. This is harmless, and after a flagged prompt it can even help.
 - **Copilot Free and Student** plans can only use automatic model selection, so a checker model may not be available. In that case prompts are sent on unchecked.
 - **Other agent harnesses.** `@maps` is a chat participant, which works in VS Code's own chat sessions. It may not be offered in sessions that run on another harness (Copilot CLI, Claude or Codex sessions). The hook-based mode on the roadmap is the better fit there.
